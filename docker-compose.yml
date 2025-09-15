@@ -1,0 +1,90 @@
+version: '3.8'
+ 
+services:
+  app:
+    build:
+      context: ./mint_market_rest_api
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=mongodb://mongodb:27017/mint_market?replicaSet=rs0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./mint_market_rest_api/uploads:/app/uploads
+      - ./mint_market_rest_api/.env:/app/.env
+      - ./mint_market_rest_api/prisma:/app/prisma
+    networks:
+      - mint-market-network
+    command: npm run start:dev
+ 
+  mongodb:
+    image: mongo:7
+    environment:
+      - MONGO_INITDB_DATABASE=mint_market
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - mint-market-network
+    command: mongod --replSet rs0 --bind_ip_all
+ 
+  mongo-setup:
+    image: mongo:7
+    depends_on:
+      - mongodb
+    networks:
+      - mint-market-network
+    command: >
+      bash -c "
+        sleep 10 &&
+        mongosh --host mongodb:27017 --eval '
+          rs.initiate({
+            _id: \"rs0\",
+            members: [
+              { _id: 0, host: \"mongodb:27017\" }
+            ]
+          })
+        '
+      "
+ 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - mint-market-network
+ 
+  mongo-express:
+    image: mongo-express:latest
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+      - ME_CONFIG_MONGODB_PORT=27017
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=
+      - ME_CONFIG_MONGODB_URL=mongodb://mongodb:27017/
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=secure_password_123
+      - ME_CONFIG_OPTIONS_EDITORTHEME=ambiance
+    ports:
+      - "127.0.0.1:8080:8081"
+    depends_on:
+      - mongodb
+    networks:
+      - mint-market-network
+ 
+volumes:
+  mongodb_data:
+  redis_data:
+ 
+networks:
+  mint-market-network:
+    driver: bridge
